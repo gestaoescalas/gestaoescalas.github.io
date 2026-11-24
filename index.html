@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0F0F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="NSVO">
+<meta name="description" content="Gestão NSVO — escalas do SVO/SES-DF">
+<title>Gestão NSVO</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+html,body{margin:0;height:100%;background:#0B0F0F;color:#fff;font:15px/1.4 "Segoe UI",Roboto,Arial,sans-serif}
+#abre{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;box-sizing:border-box;text-align:center}
+#abre img{width:96px;height:96px;border-radius:22px;box-shadow:0 0 0 1px rgba(0,179,166,.4)}
+#abre .bar{width:140px;height:4px;border-radius:4px;background:#1c2626;overflow:hidden}
+#abre .bar i{display:block;width:40%;height:100%;background:#00B3A6;border-radius:4px;animation:v 1.1s ease-in-out infinite}
+@keyframes v{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+#abre p{margin:0;color:#B7C5C5;max-width:320px}
+#abre button{background:#00B3A6;color:#0B0F0F;border:0;border-radius:12px;padding:12px 22px;font-weight:700;font-size:15px;cursor:pointer}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="abre"><img src="icone-192.png" alt=""><div class="bar" id="bar"><i></i></div><p id="msg">Abrindo a Gestão NSVO…</p><button id="tentar" class="hidden" type="button">Tentar de novo</button></div>
+<script>
+(function () {
+  'use strict';
+  // Endereço do sistema no Google (Apps Script). Os dados continuam na planilha do Drive da conta adm.nsvo.df.
+  var EXEC = 'https://script.google.com/macros/s/AKfycbyhXrDulZBf8ZRVcn3_XXXT-xMr0t8VWif_3XmZkXmAtNpEoG05KoygG_pDRlL5pT8ptA/exec';
+  // Pega o pedido de instalação do Chrome cedo, antes das telas carregarem.
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__nsvoInstalar = e; });
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* sem modo app */ } }
+
+  // Substitui o google.script.run: mesma forma de chamar, mas pela internet comum (funciona com várias contas Google no celular).
+  var PONTE = "(" + function (EXEC) {
+    function corredor(ok, falha) {
+      var alvo = {};
+      return new Proxy(alvo, { get: function (_, nome) {
+        if (nome === 'withSuccessHandler') return function (f) { return corredor(f, falha); };
+        if (nome === 'withFailureHandler') return function (f) { return corredor(ok, f); };
+        if (nome === 'withUserObject') return function () { return corredor(ok, falha); };
+        return function () {
+          var a = Array.prototype.slice.call(arguments);
+          if (nome !== 'apiNSVO') { if (falha) falha(new Error('Função não disponível: ' + String(nome))); return; }
+          var tentativas = 0;
+          (function vai() {
+            tentativas++;
+            fetch(EXEC, { method: 'POST', body: JSON.stringify({ f: a[0], a: a[1] || [] }), redirect: 'follow', credentials: 'omit' })
+              .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+              .then(function (j) { if (j && j.ok) { if (ok) ok(j.r); } else if (falha) falha(new Error(j && j.e ? j.e : 'Erro no servidor')); })
+              .catch(function (e) {
+                if (tentativas < 2 && navigator.onLine !== false) { setTimeout(vai, 800); return; }
+                if (falha) falha(new Error(navigator.onLine === false ? 'Sem internet. Confira a conexão e tente de novo.' : 'Não consegui falar com o servidor. Tente de novo.'));
+              });
+          })();
+        };
+      } });
+    }
+    window.google = window.google || {}; window.google.script = { run: corredor(null, null), host: { close: function () {}, setHeight: function () {} } };
+  } + ")(" + JSON.stringify(EXEC) + ");";
+  (0, eval)(PONTE);
+
+  var CAB = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+    + '<meta name="theme-color" content="#0B0F0F"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
+    + '<meta name="apple-mobile-web-app-status-bar-style" content="black"><meta name="apple-mobile-web-app-title" content="NSVO">'
+    + '<link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">'
+    + '<script>window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__nsvoInstalar=e;});<\/script>'
+    + '<script>' + PONTE.replace(/<\//g, '<\\/') + '<\/script>';
+
+  function mostrar(html) {
+    html = String(html).replace(/<base target="_top">/i, '');
+    html = /<head>/i.test(html) ? html.replace(/<head>/i, '<head>' + CAB) : CAB + html;
+    var bip = window.__nsvoInstalar;
+    document.open(); document.write(html); document.close();
+    if (bip && !window.__nsvoInstalar) window.__nsvoInstalar = bip;
+  }
+  function erro(t) {
+    document.getElementById('bar').classList.add('hidden');
+    document.getElementById('msg').textContent = t;
+    document.getElementById('tentar').classList.remove('hidden');
+  }
+  function carregar() {
+    document.getElementById('bar').classList.remove('hidden');
+    document.getElementById('msg').textContent = 'Abrindo a Gestão NSVO…';
+    document.getElementById('tentar').classList.add('hidden');
+    fetch(EXEC + '?tela=1&t=' + Date.now(), { credentials: 'omit', redirect: 'follow' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok || !j.html) throw new Error(j && j.e || 'sem telas');
+        try { localStorage.setItem('nsvo_tela', j.html); } catch (e) { /* sem espaço: tudo bem */ }
+        mostrar(j.html);
+      })
+      .catch(function () {
+        var c = null; try { c = localStorage.getItem('nsvo_tela'); } catch (e) { /* ok */ }
+        if (c && navigator.onLine === false) { mostrar(c); return; }
+        erro(navigator.onLine === false ? 'Sem internet. Conecte e toque em Tentar de novo.' : 'Não consegui abrir agora. Toque em Tentar de novo.');
+      });
+  }
+  document.getElementById('tentar').onclick = carregar;
+  carregar();
+})();
+</script>
+</body>
+</html>
